@@ -1,7 +1,8 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Prisma schema for the Client Review Portal.
+// Conventions:
+// - Every instant in time is `timestamptz` (stored in UTC, unambiguous).
+// - Calendar dates with no time component (due dates) are `date`.
+// - Every foreign key is indexed; composite indexes match the filters we run.
 
 generator client {
   provider = "prisma-client"
@@ -10,4 +11,102 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  CLIENT
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+}
+
+enum DeliverableStatus {
+  PENDING_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+}
+
+/// A client company. Client users only ever see data belonging to their company.
+model Client {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  users    User[]
+  projects Project[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(CLIENT)
+  /// Null for agency admins, required for client users (enforced by a CHECK constraint).
+  clientId     String?
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+
+  // Restrict: deleting a company must not silently delete its user accounts.
+  client   Client?   @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  comments Comment[]
+
+  @@index([clientId])
+}
+
+model Project {
+  id        String        @id @default(cuid())
+  name      String
+  status    ProjectStatus @default(ACTIVE)
+  /// Calendar date only: no time zone can shift it.
+  dueDate   DateTime?     @db.Date
+  clientId  String
+  createdAt DateTime      @default(now()) @db.Timestamptz(6)
+
+  // Restrict: a client company with projects cannot be deleted by accident.
+  client       Client        @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  deliverables Deliverable[]
+
+  // Tenant-scoped listing filtered by status ("my company's active projects").
+  @@index([clientId, status])
+  @@index([status])
+}
+
+model Deliverable {
+  id        String            @id @default(cuid())
+  title     String
+  /// Either an uploaded file URL or an external link (Figma, Drive, video...).
+  fileUrl   String?
+  linkUrl   String?
+  status    DeliverableStatus @default(PENDING_REVIEW)
+  projectId String
+  createdAt DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime          @updatedAt @db.Timestamptz(6)
+
+  // Cascade: a deliverable has no meaning without its project.
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  comments Comment[]
+
+  @@index([projectId, createdAt])
+  @@index([status])
+}
+
+model Comment {
+  id            String   @id @default(cuid())
+  body          String
+  deliverableId String
+  authorId      String
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+
+  // Cascade: comments live and die with their deliverable.
+  deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  // Restrict: keep authorship intact; deactivate users instead of deleting them.
+  author      User        @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  // Thread is always read in chronological order for one deliverable.
+  @@index([deliverableId, createdAt])
+  @@index([authorId])
 }
