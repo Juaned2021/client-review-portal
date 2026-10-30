@@ -4,9 +4,10 @@ import { notFound } from "next/navigation";
 import { LocalTime } from "@/components/local-time";
 import { StatusBadge } from "@/components/status-badge";
 import { formatDateOnly } from "@/lib/dates";
-import { isAdmin } from "@/server/authz";
+import { canManageProjects, isAdmin } from "@/server/authz";
 import { getProjectForActor } from "@/server/queries/projects";
 import { requireUser } from "@/server/session";
+import { DeliverableForm } from "./deliverable-form";
 
 export const metadata: Metadata = { title: "Project" };
 
@@ -33,6 +34,8 @@ export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
         </p>
       </div>
 
+      {canManageProjects(user) && <DeliverableForm projectId={project.id} />}
+
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Deliverables</h2>
         {project.deliverables.length === 0 ? (
@@ -43,7 +46,7 @@ export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
               <li key={d.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                 <div className="flex flex-col">
                   <Link href={`/deliverables/${d.id}`} className="font-medium hover:underline">
-                    {d.title}
+                    {d.title} <span className="text-xs font-normal text-zinc-500">v{d.version}</span>
                   </Link>
                   <span className="text-xs text-zinc-500">
                     <LocalTime iso={d.createdAt} /> · {d._count.comments} comment{d._count.comments === 1 ? "" : "s"}
