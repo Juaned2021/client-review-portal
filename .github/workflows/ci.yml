@@ -39,7 +39,7 @@ jobs:
       - run: npm run build
 
   migrations:
-    name: Migrations apply cleanly
+    name: Migrations + integration tests
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     env:
@@ -63,6 +63,8 @@ jobs:
       - name: Seed runs
         if: hashFiles('prisma/seed.ts') != ''
         run: npx prisma db seed
+      - name: Integration tests (tenant isolation against real Postgres)
+        run: npm run test:integration
       - name: Stop Postgres
         if: always()
         run: docker rm -f ${{ env.PG_CONTAINER }}
