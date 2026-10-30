@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Runner selection: set the repository variable CI_RUNNER to a self-hosted
+# runner label (e.g. "crp-local") or leave it unset to use GitHub-hosted runners.
+# Steps avoid `services:` and shell-specific syntax so they run on Linux and Windows.
+
+jobs:
+  checks:
+    name: Lint, typecheck, test, build
+    # Never run fork PRs: a self-hosted runner would execute untrusted code.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    env:
+      # Dummy values: this job never talks to a real database or identity provider.
+      DATABASE_URL: postgresql://ci:ci@localhost:55432/ci
+      AUTH_SECRET: ci-only-not-a-real-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  migrations:
+    name: Migrations apply cleanly
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    env:
+      PG_CONTAINER: crp-ci-pg-${{ github.run_id }}-${{ github.run_attempt }}
+      DATABASE_URL: postgresql://ci:ci@localhost:55432/ci?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Start throwaway Postgres
+        run: docker run -d --rm --name ${{ env.PG_CONTAINER }} -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=ci -p 55432:5432 postgres:16-alpine
+      - name: Wait for Postgres
+        run: node scripts/wait-for-db.mjs
+      - name: Apply migrations from scratch
+        run: npx prisma migrate deploy
+      - name: Schema matches migrations (no drift)
+        run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+      - name: Seed runs
+        if: hashFiles('prisma/seed.ts') != ''
+        run: npx prisma db seed
+      - name: Stop Postgres
+        if: always()
+        run: docker rm -f ${{ env.PG_CONTAINER }}
