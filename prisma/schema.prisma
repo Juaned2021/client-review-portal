@@ -30,14 +30,24 @@ enum DeliverableStatus {
   APPROVED
 }
 
+enum ActivityAction {
+  PROJECT_CREATED
+  DELIVERABLE_CREATED
+  VERSION_SUBMITTED
+  DELIVERABLE_APPROVED
+  CHANGES_REQUESTED
+  COMMENT_ADDED
+}
+
 /// A client company. Client users only ever see data belonging to their company.
 model Client {
   id        String   @id @default(cuid())
   name      String   @unique
   createdAt DateTime @default(now()) @db.Timestamptz(6)
 
-  users    User[]
-  projects Project[]
+  users      User[]
+  projects   Project[]
+  activities ActivityLog[]
 }
 
 model User {
@@ -51,8 +61,9 @@ model User {
   createdAt    DateTime @default(now()) @db.Timestamptz(6)
 
   // Restrict: deleting a company must not silently delete its user accounts.
-  client   Client?   @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  comments Comment[]
+  client     Client?       @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  comments   Comment[]
+  activities ActivityLog[]
 
   @@index([clientId])
 }
@@ -69,6 +80,7 @@ model Project {
   // Restrict: a client company with projects cannot be deleted by accident.
   client       Client        @relation(fields: [clientId], references: [id], onDelete: Restrict)
   deliverables Deliverable[]
+  activities   ActivityLog[]
 
   // Tenant-scoped listing filtered by status ("my company's active projects").
   @@index([clientId, status])
@@ -82,13 +94,16 @@ model Deliverable {
   fileUrl   String?
   linkUrl   String?
   status    DeliverableStatus @default(PENDING_REVIEW)
+  /// Bumped each time the agency submits a revision after "changes requested".
+  version   Int               @default(1)
   projectId String
   createdAt DateTime          @default(now()) @db.Timestamptz(6)
   updatedAt DateTime          @updatedAt @db.Timestamptz(6)
 
   // Cascade: a deliverable has no meaning without its project.
-  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  comments Comment[]
+  project    Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  comments   Comment[]
+  activities ActivityLog[]
 
   @@index([projectId, createdAt])
   @@index([status])
@@ -109,4 +124,33 @@ model Comment {
   // Thread is always read in chronological order for one deliverable.
   @@index([deliverableId, createdAt])
   @@index([authorId])
+}
+
+/// Append-only audit trail: who did what, when. Stores ids, statuses and version
+/// numbers only, never comment bodies, emails or other personal data.
+model ActivityLog {
+  id            String         @id @default(cuid())
+  action        ActivityAction
+  /// Tenant the event belongs to; every read is scoped by it.
+  clientId      String
+  actorId       String?
+  projectId     String?
+  deliverableId String?
+  fromStatus    DeliverableStatus?
+  toStatus      DeliverableStatus?
+  version       Int?
+  createdAt     DateTime       @default(now()) @db.Timestamptz(6)
+
+  client      Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  // SetNull: the audit row survives even if the actor, project or deliverable is removed.
+  actor       User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  project     Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  deliverable Deliverable? @relation(fields: [deliverableId], references: [id], onDelete: SetNull)
+
+  // Status history of one deliverable, newest first.
+  @@index([deliverableId, createdAt])
+  // Tenant activity feed.
+  @@index([clientId, createdAt])
+  @@index([projectId])
+  @@index([actorId])
 }

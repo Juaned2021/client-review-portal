@@ -96,6 +96,7 @@ export async function getProjectForActor(actor: Actor, projectId: string) {
           id: true,
           title: true,
           status: true,
+          version: true,
           createdAt: true,
           _count: { select: { comments: true } },
         },

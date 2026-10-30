@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/server/db";
+import { logActivity } from "@/server/activity";
 import { canManageProjects } from "@/server/authz";
 import { getCurrentUser } from "@/server/session";
 import { createProjectSchema } from "@/lib/validation/project";
@@ -23,7 +24,11 @@ export async function createProjectAction(_prev: FormState, formData: FormData):
   const client = await db.client.findUnique({ where: { id: parsed.data.clientId }, select: { id: true } });
   if (!client) return { fieldErrors: { clientId: ["Unknown client"] } };
 
-  const project = await db.project.create({ data: parsed.data, select: { id: true } });
+  const project = await db.$transaction(async (tx) => {
+    const created = await tx.project.create({ data: parsed.data, select: { id: true } });
+    await logActivity(tx, { action: "PROJECT_CREATED", clientId: client.id, actorId: user.id, projectId: created.id });
+    return created;
+  });
 
   revalidatePath("/projects");
   revalidatePath("/dashboard");
