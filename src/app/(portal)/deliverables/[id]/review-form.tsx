@@ -2,12 +2,26 @@
 // Client Component: two submit buttons (approve / request changes) share one
 // form, with pending state and validation errors from the Server Action.
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useActionState } from "react";
 import { FieldError, inputClass } from "@/components/form-field";
+import { useTRPC } from "@/lib/trpc/client";
 import { reviewDeliverableAction } from "@/server/actions/deliverables";
 
 export function ReviewForm({ deliverableId }: { deliverableId: string }) {
-  const [state, formAction, pending] = useActionState(reviewDeliverableAction, undefined);
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const [state, formAction, pending] = useActionState<Awaited<ReturnType<typeof reviewDeliverableAction>>, FormData>(
+    async (prev, formData) => {
+      const result = await reviewDeliverableAction(prev, formData);
+      // A change request also posts a comment: refresh the client-side thread cache.
+      if (!result?.error) {
+        await queryClient.invalidateQueries({ queryKey: trpc.comment.list.queryKey({ deliverableId }) });
+      }
+      return result;
+    },
+    undefined,
+  );
 
   return (
     <form action={formAction} className="flex flex-col gap-3 rounded-md border border-zinc-200 p-4 dark:border-zinc-800">
