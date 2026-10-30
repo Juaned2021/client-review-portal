@@ -11,7 +11,14 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["tests/**/*.test.ts"],
-    passWithNoTests: true,
+    projects: [
+      // Pure logic: no database, runs everywhere (`npm test`).
+      { extends: true, test: { name: "unit", include: ["tests/unit/**/*.test.ts"] } },
+      // Needs a migrated + seeded Postgres (`npm run test:integration`).
+      {
+        extends: true,
+        test: { name: "integration", include: ["tests/integration/**/*.int.test.ts"], setupFiles: ["dotenv/config"] },
+      },
+    ],
   },
 });
