@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { CommentThread } from "@/components/comment-thread";
 import { LocalTime } from "@/components/local-time";
 import { StatusBadge } from "@/components/status-badge";
 import type { ActivityAction } from "@/generated/prisma/enums";
-import { canReviewDeliverable, isAdmin } from "@/server/authz";
+import { canComment, canReviewDeliverable, isAdmin } from "@/server/authz";
 import { getDeliverableForActor } from "@/server/queries/deliverables";
 import { requireUser } from "@/server/session";
 import { NewVersionForm } from "./new-version-form";
@@ -62,25 +63,12 @@ export default async function DeliverablePage(props: PageProps<"/deliverables/[i
         {canReview && <ReviewForm deliverableId={d.id} />}
         {canSubmitVersion && <NewVersionForm deliverableId={d.id} nextVersion={d.version + 1} />}
 
-        <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-semibold">Comments</h2>
-          {d.comments.length === 0 ? (
-            <p className="text-sm text-zinc-500">No comments yet.</p>
-          ) : (
-            <ul className="flex flex-col gap-3">
-              {d.comments.map((c) => (
-                <li key={c.id} className="rounded-md border border-zinc-200 p-3 text-sm dark:border-zinc-800">
-                  <div className="mb-1 flex items-center gap-2 text-xs text-zinc-500">
-                    <span className="font-medium text-zinc-900 dark:text-zinc-100">{c.author.name}</span>
-                    {c.author.role === "ADMIN" && <span className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">Agency</span>}
-                    <LocalTime iso={c.createdAt} />
-                  </div>
-                  <p className="whitespace-pre-wrap">{c.body}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        <CommentThread
+          deliverableId={d.id}
+          viewer={{ id: user.id, name: user.name, role: user.role }}
+          initialComments={d.comments}
+          canComment={canComment(user, d.project.clientId)}
+        />
       </div>
 
       <aside className="flex flex-col gap-3">

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { signOut } from "@/auth";
+import { TRPCReactProvider } from "@/lib/trpc/client";
 import { requireUser } from "@/server/session";
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
@@ -38,7 +39,10 @@ export default async function PortalLayout({ children }: { children: React.React
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">{children}</main>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">
+        {/* A Client Component provider can wrap Server Component children: they still render on the server. */}
+        <TRPCReactProvider>{children}</TRPCReactProvider>
+      </main>
     </div>
   );
 }
